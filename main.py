@@ -67,8 +67,8 @@ def build_parser():
     parser.add_argument("--iwspa", type=str, default=None, help="Deprecated manual IWSPA path override.")
     parser.add_argument("--spaphish", type=str, default=None, help="Deprecated manual Spaphish path override.")
     parser.add_argument("--classifier", type=str, default="microsoft/mdeberta-v3-base")
-    parser.add_argument("--slm", type=str, default="auto", help="SLM model id, local path, or 'auto' for hardware-based online selection.")
-    parser.add_argument("--teacher", type=str, default="auto",
+    parser.add_argument("--slm", type=str, default="Qwen/Qwen2.5-3B-Instruct", help="SLM model id, local path, or 'auto' for hardware-based online selection.")
+    parser.add_argument("--teacher", type=str, default="Qwen/Qwen2.5-7B-Instruct",
                         help="Teacher LLM for augmentation. Model id, local path, or 'auto' for hardware-based selection.")
     parser.add_argument("--fresh-all", action="store_true", help="Rebuild every phase without reusing previous checkpoints.")
     parser.add_argument("--fresh-harmonizer", action="store_true", help="Regenerate harmonized data.")
