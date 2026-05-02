@@ -153,16 +153,26 @@ Open `http://127.0.0.1:8000` in your browser.
 ```bash
 # List detected SLM adapters
 python evaluate_slm_intelligence.py --list-models
+```
+Scans the project directories for fine-tuned adapters and prints their names, base models, and paths.
 
+```bash
 # Evaluate a specific adapter
 python evaluate_slm_intelligence.py --model <adapter_name>
+```
+Runs the adapter against the benchmark suite and reports scores for grounding, honesty, hallucination resistance, and cybersecurity alignment.
 
+```bash
 # Compare adapter vs base model
 python evaluate_slm_intelligence.py --model <adapter_name> --compare-base
+```
+Evaluates both the adapter and its original base model on the same benchmark, then shows the delta between them along with statistical significance testing (bootstrap CI, sign test) to determine if the fine-tuning produced a real improvement.
 
+```bash
 # JSON output for automation
 python evaluate_slm_intelligence.py --model <adapter_name> --json
 ```
+Outputs the evaluation report as machine-readable JSON instead of the human-friendly table. Useful for CI/CD pipelines or scripted analysis.
 
 ---
 
