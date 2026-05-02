@@ -213,23 +213,28 @@ class ModelAdvisor:
         """Maximum teacher params assuming 4-bit inference (0.5 GB per B param).
 
         vram_gb is the *free* VRAM available (from nvidia-smi), not total.
-        We only need to reserve for KV-cache, activations, and driver overhead.
+        During `from_pretrained`, shards are loaded as float16 and quantized
+        on the fly, requiring a full additional shard (~2-4 GB) as temporary
+        buffer on top of the final quantized weights.
 
-        Formula: (free_vram_gb - 3_overhead) * 2
+        Formula: (free_vram_gb - 6_overhead) * 2
+        Overhead covers: shard temp buffer + KV-cache + activations + fragmentation.
+
         Examples:
-            40 GB free → up to ~74 B params  (can fit 70B safely)
-            24 GB free → up to ~42 B params  (fits 32B comfortably)
-            16 GB free → up to ~26 B params  (fits 13B comfortably)
-             8 GB free → up to ~10 B params  (fits 7B safely)
+            40 GB free → up to ~68 B params  (fits 32B easily)
+            24 GB free → up to ~36 B params  (fits 14B easily, 32B risky)
+            18 GB free → up to ~24 B params  (fits 8B easily, 14B ok)
+            16 GB free → up to ~20 B params  (fits 8B easily)
+             8 GB free → up to  ~4 B params  (fits 1.5-3B)
         """
         device = hw_specs.get("device")
         vram = float(hw_specs.get("vram_gb", 0.0))
         ram  = float(hw_specs.get("ram_gb", 0.0))
         if device == "cuda":
-            return max(1.0, (vram - 3.0) * 2.0)   # 4-bit: 0.5 GB/B, 3GB overhead
+            return max(1.0, (vram - 6.0) * 2.0)   # 4-bit: 0.5 GB/B, 6GB overhead for safe loading
         if device in {"mps", "xpu"}:
             usable = min(vram, ram) if vram > 0 else ram * 0.6
-            return max(1.0, (usable - 3.0) * 2.0)
+            return max(1.0, (usable - 6.0) * 2.0)
         # CPU: full-precision (2 GB/B BF16), conservative
         return max(1.0, (ram * 0.45 - 2.0) / 2.0)
 
