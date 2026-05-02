@@ -179,6 +179,7 @@ def main():
 
     hw_specs = detect_hardware_profile(logger)
     logger.info("Global hardware profile: %s", hw_specs["profile"])
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(hw_specs.get("gpu_index", 0))
 
     from src.pipeline.augmenter import DataAugmenter
     from src.pipeline.classifier_trainer import ClassifierTrainer
