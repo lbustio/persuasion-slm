@@ -158,8 +158,7 @@ class DataAugmenter:
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=compute_dtype,
             )
-            model_kwargs["device_map"] = "auto"
-            model_kwargs["max_memory"] = {0: "38GiB", "cpu": "48GiB"}
+            model_kwargs["device_map"] = {"": 0}
         else:
             model_kwargs["torch_dtype"] = compute_dtype
             model_kwargs["device_map"] = {"": 0} if torch.cuda.is_available() else "auto"
