@@ -126,6 +126,13 @@ class ClassifierTrainer:
             turbo.use_tf32,
         )
         
+        save_strategy = training_cfg.get("save_strategy", "steps")
+        eval_strategy = training_cfg.get("eval_strategy", "steps")
+        save_steps = int(training_cfg.get("save_steps", 200))
+        eval_steps = int(training_cfg.get("eval_steps", 200))
+        save_total_limit = int(training_cfg.get("save_total_limit", 3))
+        logging_steps = int(training_cfg.get("logging_steps", 25))
+
         args = TrainingArguments(
             output_dir=str(checkpoint_dir),
             per_device_train_batch_size=turbo.train_batch_size,
@@ -135,10 +142,13 @@ class ClassifierTrainer:
             learning_rate=float(training_cfg.get("learning_rate", 3.0e-5)),
             fp16=turbo.use_fp16,
             bf16=turbo.use_bf16,
-            save_strategy="epoch",
-            eval_strategy="epoch",
+            save_strategy=save_strategy,
+            eval_strategy=eval_strategy,
+            save_steps=save_steps,
+            eval_steps=eval_steps,
+            save_total_limit=save_total_limit,
             logging_dir=str(self.layout.logs_runs),
-            logging_steps=10,
+            logging_steps=logging_steps,
             report_to="none",
             dataloader_num_workers=turbo.dataloader_num_workers,
             dataloader_pin_memory=turbo.dataloader_pin_memory,
@@ -176,12 +186,17 @@ class ClassifierTrainer:
         def tokenize(batch):
             tokens = tokenizer(batch["text"], truncation=True, max_length=turbo.max_length)
             labels_batch = []
+            raw_labels = batch["labels"]
+            # HF Datasets may return Struct columns as list-of-dicts OR dict-of-lists
+            # depending on the version and Arrow schema inference.
+            is_col_oriented = isinstance(raw_labels, dict)
             for i in range(len(batch["text"])):
-                labels_dict = batch["labels"][i]
+                if is_col_oriented:
+                    labels_dict = {k: raw_labels[k][i] for k in raw_labels}
+                else:
+                    labels_dict = raw_labels[i]
                 is_phishing = batch.get("is_phishing", [0] * len(batch["text"]))[i]
-                # Principles (first 5)
                 vector = [float(labels_dict.get(k, 0)) for k in label_keys[:-1]]
-                # Binary verdict (6th)
                 vector.append(float(is_phishing))
                 labels_batch.append(vector)
             tokens["labels"] = labels_batch

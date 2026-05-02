@@ -219,6 +219,13 @@ class SLMFineTuner:
         train_ds = split_ds["train"].map(tokenize, batched=True, remove_columns=split_ds["train"].column_names)
         eval_ds = split_ds["eval"].map(tokenize, batched=True, remove_columns=split_ds["eval"].column_names)
         
+        save_strategy = training_cfg.get("save_strategy", "steps")
+        eval_strategy = training_cfg.get("eval_strategy", "steps")
+        save_steps = int(training_cfg.get("save_steps", 200))
+        eval_steps = int(training_cfg.get("eval_steps", 200))
+        save_total_limit = int(training_cfg.get("save_total_limit", 3))
+        logging_steps = int(training_cfg.get("logging_steps", 25))
+
         args = TrainingArguments(
             output_dir=str(checkpoint_dir),
             per_device_train_batch_size=turbo.train_batch_size,
@@ -228,10 +235,13 @@ class SLMFineTuner:
             learning_rate=float(training_cfg.get("learning_rate", 3.0e-5)),
             fp16=turbo.use_fp16,
             bf16=use_bf16,
-            save_strategy="epoch",
-            eval_strategy="epoch",
+            save_strategy=save_strategy,
+            eval_strategy=eval_strategy,
+            save_steps=save_steps,
+            eval_steps=eval_steps,
+            save_total_limit=save_total_limit,
             logging_dir=str(self.layout.logs_runs),
-            logging_steps=10,
+            logging_steps=logging_steps,
             report_to="none",
             optim="paged_adamw_8bit" if turbo.qlora_4bit else "adamw_torch",
             dataloader_num_workers=turbo.dataloader_num_workers,

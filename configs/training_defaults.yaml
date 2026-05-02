@@ -31,6 +31,7 @@ models:
 training:
   max_length: 256
   slm_max_length: 4096
+  teacher_max_new_tokens: 2048
   learning_rate: 3.0e-5
   hardware_profiles:
     HIGH_VRAM:

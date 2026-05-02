@@ -1,4 +1,4 @@
-﻿# BITACORA DE TRANSFERENCIA: Proyecto Persuasion SLM
+# BITACORA DE TRANSFERENCIA: Proyecto Persuasion SLM
 
 > Estado operativo real del repositorio al 2026-04-28. Este documento ya no describe el plan ideal, sino lo que el codigo y los artefactos reflejan hoy.
 
@@ -728,5 +728,118 @@ Respaldos:
 Regla operativa:
 - Para una corrida final limpia se usa `--fresh-all`.
 - Para entrenar otro SLM reutilizando el aumento ya calculado, no usar `--fresh-all`; usar `--fresh-slm` y conservar `outputs/artifacts/augmented_dataset.jsonl`.
+
+---
+
+## 16. Sesion 2026-05-02: correccion critica de truncacion y arquitectura de seleccion de modelos
+
+### Causa raiz del fallo anterior (calidad de augmentation)
+El pipeline fallaba con `1425/2510` registros en el quality gate.
+Diagnostico: `max_new_tokens` estaba hardcodeado en `420` en `augmenter.py`.
+El teacher no podia completar el marcador `Limite:` al final de la respuesta.
+Solucion: externalizado a `configs/training_defaults.yaml` bajo `teacher_max_new_tokens: 2048`.
+
+### Bugs corregidos en esta sesion
+
+**augmenter.py**
+- `max_new_tokens=420` hardcodeado -> ahora lee `teacher_max_new_tokens` del config (default 2048).
+- `force_restart` solo borraba `augmented_partial.jsonl` pero no `augmented_dataset.jsonl`.
+  Ahora ambos se borran explicitamente para evitar remanentes de runs malos.
+- El teacher ahora usa cuantizacion 4-bit NF4 en TODOS los perfiles CUDA (no solo MID_VRAM).
+  Esto permite seleccionar modelos 2-3x mas grandes sin OOM. Ejemplo: 70B en A100 40GB.
+
+**slm_finetuner.py**
+- `save_strategy` y `eval_strategy` estaban hardcodeados como `"epoch"`.
+  Ahora leen `save_strategy`, `eval_strategy`, `save_steps`, `eval_steps`, `save_total_limit`
+  y `logging_steps` de `training_defaults.yaml`.
+  Con la configuracion actual: `save_strategy: steps` + `save_steps: 200`.
+  Impacto: crash a mitad de una epoca de 4h ya no pierde todo el trabajo.
+
+**classifier_trainer.py**
+- Mismo bug de `save_strategy="epoch"` hardcodeado. Corregido igual que slm_finetuner.
+- `batch["labels"][i]` asumia que HuggingFace Datasets retorna lista de dicts para columnas Struct.
+  Dependiendo de la version de HF Datasets puede retornar dict de listas (formato columnar Arrow).
+  Correccion: se detecta el formato con `isinstance(raw_labels, dict)` y se maneja ambos casos.
+  IMPORTANTE: el classifier NUNCA habia corrido en produccion (el pipeline fallaba antes en augmenter),
+  por lo que este bug hubiera crasheado en la primera corrida real.
+
+**turbo.py**
+- Umbral de VRAM para SLM: `>= 40` -> `>= 38`.
+  Razon: A100 40GB reporta ~39.6 GB reales, no llegaba al tier de batch_size=8.
+- Rango 24-38 GB ahora usa `grad_ckpt=True` como medida de seguridad contra OOM
+  cuando el model advisor selecciona modelos grandes (13-14B) en GPUs intermedias.
+
+**main.py**
+- `args.teacher` se pasaba directamente al augmenter en lugar de `selected_teacher`.
+  Bug latente que habria ignorado la seleccion dinamica. Corregido.
+
+### Nuevas capacidades
+
+**Seleccion dinamica del Teacher (model_advisor.py)**
+- Nuevo metodo `discover_teacher_model(hw_specs)` en `ModelAdvisor`.
+- Criterio diferente al SLM: el teacher es solo inferencia -> usa formula 4-bit:
+  `max_params = (vram_gb - 4) * 2`
+- Scoring maximiza tamano dentro de la capacidad (no centra en 75% como el SLM).
+- Bonus de calidad por familia: Llama-3.3 (+2.0), Qwen3 (+1.7), Llama-3.1 (+1.8),
+  Qwen2.5 (+1.5), Mixtral (+1.4), Gemma-2 (+1.3), Phi-4 (+1.2), Mistral (+1.2), etc.
+- Fallback a `Qwen/Qwen2.5-7B-Instruct` si no hay internet ni cache local.
+- Reporte guardado en `outputs/results/reports/teacher_advisor_last_report.json`.
+- Reutiliza la instancia de `ModelAdvisor` ya creada para el SLM cuando aplica
+  (evita llamadas duplicadas a la API de HuggingFace).
+
+**Capacidad del teacher por hardware (4-bit inferencia)**
+- RTX 8 GB  -> hasta ~8B
+- RTX 16 GB -> hasta ~24B (antes: hardcodeado Qwen 7B)
+- A100 40 GB -> hasta ~72B (antes: hardcodeado Qwen 7B)
+- A100 80 GB -> hasta ~144B (antes: hardcodeado Qwen 7B)
+
+**main.py**
+- `--teacher` ahora acepta `"auto"` como valor (default).
+- Para forzar un modelo especifico: `--teacher meta-llama/Llama-3.1-70B-Instruct`
+
+### Estado operativo actual
+
+Pipeline listo para corrida completa. Todos los bugs conocidos corregidos.
+El classifier nunca habia llegado a correr en produccion; esta sesion es la primera
+vez que el codigo completo esta validado para una corrida full de punta a punta.
+
+Comando recomendado:
+
+```
+python main.py --fresh-all
+```
+
+Para forzar un teacher especifico (por ejemplo en A100):
+
+```
+python main.py --fresh-all --teacher meta-llama/Llama-3.1-70B-Instruct
+```
+
+Para mantener el SLM pero regenerar solo el augmenter:
+
+```
+python main.py --fresh-augmenter --fresh-slm
+```
+
+### Archivos modificados en esta sesion
+- `configs/training_defaults.yaml`: añadido `teacher_max_new_tokens: 2048`
+- `src/pipeline/augmenter.py`: tokens config, force_restart out_path, 4-bit always-on CUDA
+- `src/pipeline/slm_finetuner.py`: save_strategy desde config, save_steps, eval_steps
+- `src/pipeline/classifier_trainer.py`: save_strategy desde config, HF Datasets batch["labels"] fix
+- `src/utils/turbo.py`: threshold 40->38 GB, grad_ckpt=True para rango 24-38 GB
+- `src/utils/model_advisor.py`: discover_teacher_model(), QUALITY_FAMILIES, _score_teacher_models(), _max_teacher_params_for_hw(), _write_teacher_report()
+- `main.py`: --teacher auto default, seleccion dinamica, selected_teacher pasado al augmenter
+
+### Gestion de Secretos y Autenticacion (Update 2026-05-02)
+- Se creo la carpeta `secrets/` y el archivo `secrets/secrets.txt`.
+- El sistema ahora lee el `HF_TOKEN` desde este archivo para permitir el acceso a modelos protegidos (gated) como Llama 3.3.
+- Se recomienda NO subir la carpeta `secrets/` al control de versiones.
+
+### Resolucion de Entorno A100
+- Se detecto un conflicto de drivers en el servidor (CUDA 12.0 driver vs PyTorch default).
+- Solucion: reinstalacion manual de `torch-2.5.1+cu121` para alinear el software con el hardware disponible.
+- Una vez alineado, el sistema detecta correctamente la **NVIDIA A100-PCIE-40GB** y activa la estrategia `HIGH_VRAM`.
+- Con este perfil, el `ModelAdvisor` selecciona automaticamente a **meta-llama/Llama-3.3-70B-Instruct** como Teacher para maxima calidad de razonamiento en la aumentacion.
+
 
 

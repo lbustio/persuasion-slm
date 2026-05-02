@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +15,23 @@ import requests
 INSTRUCT_MARKERS = ("instruct", "chat", "it")
 BAD_MARKERS = ("embedding", "reranker", "vision", "vl", "coder", "gguf", "awq", "gptq")
 
+# Quality bonus multipliers for known high-capability teacher model families.
+# Higher = better reasoning and instruction following for synthetic audit generation.
+QUALITY_FAMILIES: dict[str, float] = {
+    "llama-3.3":     2.0,   # Meta's best open instruct (late 2024)
+    "llama-3.1":     1.8,
+    "llama-3":       1.6,
+    "qwen2.5":       1.5,   # Alibaba, strong multilingual reasoning
+    "qwen3":         1.7,
+    "gemma-2":       1.3,   # Google, efficient and capable
+    "mistral":       1.2,
+    "mixtral":       1.4,   # MoE variant, very capable
+    "command-r-plus":1.3,
+    "command-r":     1.1,
+    "phi-4":         1.2,   # Microsoft, surprisingly capable small models
+    "phi-3":         0.9,
+}
+
 
 @dataclass
 class ModelCandidateScore:
@@ -22,8 +40,9 @@ class ModelCandidateScore:
     params_b: float
     downloads: int
     likes: int
-    context_length: int | None
-    reason: str
+    context_length: int | None = None
+    reason: str = ""
+    gated: bool = False
 
 
 class ModelAdvisor:
@@ -50,6 +69,186 @@ class ModelAdvisor:
         winner = report["winner"]["model_id"]
         self.logger.info("Selected SLM for hardware: %s", winner)
         return winner
+
+    def discover_teacher_model(self, hw_specs: dict[str, Any], *, limit: int = 80) -> str:
+        """Select the best instruction-following model for Teacher/augmentation.
+
+        Teacher models are used for *inference only*, so we can apply 4-bit
+        quantization and select models that are 2-3x larger than what we would
+        choose for LoRA fine-tuning. This maximises the quality of synthetic
+        audit data without any training-time memory overhead.
+
+        Capacity formula (4-bit, 0.5 GB per B params):
+            max_params = (vram_gb - 4_overhead) * 2
+
+        Examples:
+            A100 40 GB → up to ~72 B params  (selects Llama-3.1-70B-Instruct)
+            RTX 16 GB  → up to ~24 B params  (selects a 13-14 B model)
+            RTX  8 GB  → up to  ~8 B params  (selects a 7 B model)
+        """
+        self.logger.info(
+            "Searching for the best Teacher model | backend=%s device=%s vram=%.1fGB",
+            hw_specs.get("backend"),
+            hw_specs.get("device"),
+            float(hw_specs.get("vram_gb", 0.0)),
+        )
+        report = self.rank_teacher_models(hw_specs, limit=limit)
+        self._write_teacher_report(report)
+        if not report["winner"]:
+            fallback = "Qwen/Qwen2.5-7B-Instruct"
+            self.logger.warning(
+                "No Teacher candidate found (no internet or no cached model). "
+                "Falling back to default: %s", fallback,
+            )
+            return fallback
+        winner = report["winner"]["model_id"]
+        self.logger.info(
+            "Selected Teacher model: %s  (%.1f B params, max capacity %.1f B)",
+            winner,
+            report["winner"]["params_b"],
+            self._max_teacher_params_for_hw(hw_specs),
+        )
+        return winner
+
+    def rank_teacher_models(self, hw_specs: dict[str, Any], *, limit: int = 80) -> dict[str, Any]:
+        """Rank all viable teacher candidates and return a scored report."""
+        try:
+            raw_models = self._fetch_hf_models(limit=limit)
+            candidates = self._score_teacher_models(raw_models, hw_specs)
+        except Exception as exc:
+            self.logger.warning("Remote teacher search failed: %s. Trying local HF cache.", exc)
+            raw_models = self._fetch_local_cached_models()
+            candidates = self._score_teacher_models(raw_models, hw_specs)
+            return {
+                "hardware": hw_specs,
+                "source": "local_cache" if candidates else "unresolved",
+                "winner": max(candidates, key=lambda c: c.score).__dict__ if candidates else None,
+                "candidates": [c.__dict__ for c in sorted(candidates, key=lambda c: c.score, reverse=True)[:20]],
+                "error": str(exc),
+            }
+
+        if not candidates:
+            local = self._score_teacher_models(self._fetch_local_cached_models(), hw_specs)
+            if local:
+                local.sort(key=lambda c: c.score, reverse=True)
+                return {"hardware": hw_specs, "source": "local_cache",
+                        "winner": local[0].__dict__,
+                        "candidates": [c.__dict__ for c in local[:20]]}
+            return {"hardware": hw_specs, "source": "unresolved", "winner": None,
+                    "candidates": [], "error": "no suitable teacher candidates found"}
+
+        candidates.sort(key=lambda c: c.score, reverse=True)
+        return {
+            "hardware": hw_specs,
+            "source": "huggingface_api",
+            "winner": candidates[0].__dict__,
+            "candidates": [c.__dict__ for c in candidates[:20]],
+        }
+
+    def _max_teacher_params_for_hw(self, hw_specs: dict[str, Any]) -> float:
+        """Maximum teacher params assuming 4-bit inference (0.5 GB per B param).
+
+        We reserve extra headroom for KV-cache, activations, tokenizer buffers,
+        and driver overhead. Real-world 4-bit loading of 70B models needs ~38GB
+        which does not fit in a 40GB A100 without heavy CPU offload.
+
+        Formula: (vram_gb - 8_overhead) * 2
+        Examples:
+            A100 40 GB → up to ~64 B params  (avoids borderline 70B)
+            A100 80 GB → up to ~144 B params (fits 70B comfortably)
+            RTX 24 GB  → up to ~32 B params  (selects a 13-14 B model)
+            RTX 16 GB  → up to ~16 B params  (selects an 8 B model)
+            RTX  8 GB  → up to   ~0 B params → clamped to 1.0
+        """
+        device = hw_specs.get("device")
+        vram = float(hw_specs.get("vram_gb", 0.0))
+        ram  = float(hw_specs.get("ram_gb", 0.0))
+        if device == "cuda":
+            return max(1.0, (vram - 8.0) * 2.0)   # 4-bit: 0.5 GB/B, 8GB overhead
+        if device in {"mps", "xpu"}:
+            usable = min(vram, ram) if vram > 0 else ram * 0.6
+            return max(1.0, (usable - 8.0) * 2.0)
+        # CPU: full-precision (2 GB/B BF16), conservative
+        return max(1.0, (ram * 0.45 - 2.0) / 2.0)
+
+    def _score_teacher_models(
+        self, models: list[dict[str, Any]], hw_specs: dict[str, Any]
+    ) -> list[ModelCandidateScore]:
+        """Score models for teacher use: maximise size + quality family bonus."""
+        max_params = self._max_teacher_params_for_hw(hw_specs)
+        rows: list[ModelCandidateScore] = []
+
+        for model in models:
+            model_id = str(model.get("modelId", ""))
+            lowered  = model_id.lower()
+
+            if not model_id or not any(m in lowered for m in INSTRUCT_MARKERS):
+                continue
+            if any(m in lowered for m in BAD_MARKERS):
+                continue
+
+            params_b = self._extract_params_b(model)
+            if params_b <= 0.0 or params_b > max_params:
+                continue
+
+            is_gated = model.get("gated") is True
+            is_cached = model.get("local_cached") is True
+
+            context_length = self._extract_context_length(model)
+            downloads = int(model.get("downloads") or 0)
+            likes     = int(model.get("likes") or 0)
+            score     = 1.0   # base: passes instruct gate
+            reasons   = ["instruction_tuned"]
+
+            # --- Size score: maximise within capacity (teacher = bigger is better)
+            size_score = params_b / max(max_params, 1.0)
+            score += size_score * 5.0
+            reasons.append(f"{params_b:.1f}B")
+
+            # --- Quality family bonus
+            for family, bonus in QUALITY_FAMILIES.items():
+                if family in lowered:
+                    score += bonus
+                    reasons.append(f"family:{family}")
+                    break   # take the highest-priority match only
+
+            # --- Long context bonus (teacher generates up to 2048 tokens)
+            if context_length and context_length >= 8192:
+                score += min(1.5, context_length / 65536.0)
+                reasons.append(f"context={context_length}")
+            elif not context_length:
+                score -= 0.5   # unknown context — mild penalty
+
+            # --- Popularity & freshness signals
+            score += min(1.5, downloads / 3_000_000.0)
+            score += min(0.8, likes / 2000.0)
+            score += self._recency_bonus(model)
+
+            if model.get("local_cached"):
+                score += 0.5   # prefer already-downloaded models
+                reasons.append("local_cache")
+
+            rows.append(ModelCandidateScore(
+                model_id=model_id,
+                score=round(score, 4),
+                params_b=params_b,
+                downloads=downloads,
+                likes=likes,
+                context_length=context_length,
+                reason=", ".join(reasons),
+                gated=is_gated,
+            ))
+        return rows
+
+    def _write_teacher_report(self, report: dict[str, Any]) -> None:
+        if not self.cache_dir:
+            return
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            path = self.cache_dir / "teacher_advisor_last_report.json"
+            path.write_text(json.dumps(report, indent=2, ensure_ascii=True), encoding="utf-8")
+        except Exception as exc:
+            self.logger.warning("Could not write teacher advisor report: %s", exc)
 
     def rank_models(self, hw_specs: dict[str, Any], *, limit: int = 80) -> dict[str, Any]:
         self.logger.info(
@@ -115,6 +314,7 @@ class ModelAdvisor:
                     "full": "true",
                 },
                 timeout=20,
+                headers={"Authorization": f"Bearer {os.environ['HF_TOKEN']}"} if os.environ.get("HF_TOKEN") else None
             )
             response.raise_for_status()
             for model in response.json():
@@ -180,6 +380,9 @@ class ModelAdvisor:
             if params_b <= 0.0 or params_b > max_params:
                 continue
 
+            is_gated = model.get("gated") is True
+            is_cached = model.get("local_cached") is True
+
             context_length = self._extract_context_length(model)
             downloads = int(model.get("downloads") or 0)
             likes = int(model.get("likes") or 0)
@@ -220,6 +423,7 @@ class ModelAdvisor:
                     likes=likes,
                     context_length=context_length,
                     reason=", ".join(reasons) or "fits_hardware",
+                    gated=is_gated,
                 )
             )
         return rows

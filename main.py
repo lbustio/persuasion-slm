@@ -23,6 +23,13 @@ def bootstrap_runtime():
     layout.ensure_runtime_dirs()
     os.environ["HF_HOME"] = str(layout.cache_downloads)
     os.environ["TORCH_HOME"] = str(layout.cache_downloads)
+    
+    secrets_path = layout.root_dir / "secrets" / "secrets.txt"
+    if secrets_path.exists():
+        token = secrets_path.read_text(encoding="utf-8").strip()
+        if token:
+            os.environ["HF_TOKEN"] = token
+            
     return layout
 
 
@@ -61,7 +68,8 @@ def build_parser():
     parser.add_argument("--spaphish", type=str, default=None, help="Deprecated manual Spaphish path override.")
     parser.add_argument("--classifier", type=str, default="microsoft/mdeberta-v3-base")
     parser.add_argument("--slm", type=str, default="auto", help="SLM model id, local path, or 'auto' for hardware-based online selection.")
-    parser.add_argument("--teacher", type=str, default="Qwen/Qwen2.5-7B-Instruct")
+    parser.add_argument("--teacher", type=str, default="auto",
+                        help="Teacher LLM for augmentation. Model id, local path, or 'auto' for hardware-based selection.")
     parser.add_argument("--fresh-all", action="store_true", help="Rebuild every phase without reusing previous checkpoints.")
     parser.add_argument("--fresh-harmonizer", action="store_true", help="Regenerate harmonized data.")
     parser.add_argument("--fresh-augmenter", action="store_true", help="Regenerate augmented data.")
@@ -183,10 +191,18 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     selected_slm = args.slm
+    advisor = None
     if selected_slm.lower() == "auto":
         advisor = ModelAdvisor(logger, cache_dir=layout.outputs_reports, model_cache_dir=layout.cache_downloads)
         selected_slm = advisor.discover_optimal_model(hw_specs)
     logger.info("Using SLM model: %s", selected_slm)
+
+    selected_teacher = args.teacher
+    if selected_teacher.lower() == "auto":
+        if advisor is None:
+            advisor = ModelAdvisor(logger, cache_dir=layout.outputs_reports, model_cache_dir=layout.cache_downloads)
+        selected_teacher = advisor.discover_teacher_model(hw_specs)
+    logger.info("Using Teacher model: %s", selected_teacher)
 
     try:
         fresh_harmonizer = args.fresh_all or args.fresh_harmonizer
@@ -212,7 +228,7 @@ def main():
         augmenter = DataAugmenter(run_id=run_id)
         augmented_dataset_path = augmenter.execute(
             dataset_path,
-            args.teacher,
+            selected_teacher,
             force_restart=fresh_augmenter,
             split_manifest_path=split_manifest_path,
         )

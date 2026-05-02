@@ -101,12 +101,12 @@ def build_turbo_settings(hw_specs: dict, workload: str, base_cfg: dict, max_leng
 
     qlora_4bit = device == "cuda" and (qlora_from_profile or vram_gb < 18)
     if device == "cuda":
-        if vram_gb >= 40:
+        if vram_gb >= 38:           # A100 40GB reports ~39.6 GB real
             train_bs, eval_bs, ga = 8, 8, 1
             grad_ckpt = False
         elif vram_gb >= 24:
             train_bs, eval_bs, ga = 4, 4, 1
-            grad_ckpt = False
+            grad_ckpt = True        # safety for 24-38 GB range with large models
         elif vram_gb >= 12:
             train_bs, eval_bs, ga = 2, 2, 2
             grad_ckpt = qlora_4bit

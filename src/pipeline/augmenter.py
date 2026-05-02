@@ -55,6 +55,9 @@ class DataAugmenter:
         self.hw_specs = detect_hardware_profile(self.logger)
         self.hardware_profile = self.hw_specs["profile"]
         self.quality_gate = AugmentedDatasetQualityGate(AUGMENTATION_SCHEMA_VERSION)
+        self.teacher_max_new_tokens = (
+            self.config.get("training", {}).get("teacher_max_new_tokens", 2048)
+        )
 
     def _to_ascii(self, value: object) -> str:
         text = str(value)
@@ -114,6 +117,9 @@ class DataAugmenter:
             self.logger.info("Fresh augmentation requested. Existing final and partial artifacts will be rebuilt.")
             if partial_path.exists():
                 partial_path.unlink()
+            if out_path.exists():
+                out_path.unlink()
+                self.logger.info("Deleted stale augmented dataset: %s", out_path)
 
         if not Path(input_jsonl).exists():
             self.logger.error("Input file not found: %s", input_jsonl)
@@ -137,8 +143,15 @@ class DataAugmenter:
         else:
             compute_dtype = torch.bfloat16 if self.hw_specs["bf16_supported"] else torch.float16
 
-        if self.hardware_profile == "MID_VRAM" and self.hw_specs["device"] == "cuda":
-            self.logger.info("Using 4-bit quantization (BitsAndBytes) with %s.", compute_dtype)
+        if self.hw_specs["device"] == "cuda":
+            # Always use 4-bit NF4 on any CUDA device.
+            # Teacher is inference-only: quantisation loss is negligible, but
+            # it allows selecting models 2-3x larger than the raw VRAM would
+            # otherwise permit (e.g. Llama-3.1-70B on an A100 40 GB).
+            self.logger.info(
+                "Loading teacher in 4-bit NF4 (%s) — enables larger models on %s.",
+                compute_dtype, self.hardware_profile,
+            )
             model_kwargs["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=True,
@@ -146,9 +159,14 @@ class DataAugmenter:
                 bnb_4bit_compute_dtype=compute_dtype,
             )
             model_kwargs["device_map"] = "auto"
+            model_kwargs["max_memory"] = {0: "38GiB", "cpu": "48GiB"}
         else:
             model_kwargs["torch_dtype"] = compute_dtype
-            model_kwargs["device_map"] = "auto"
+            model_kwargs["device_map"] = {"": 0} if torch.cuda.is_available() else "auto"
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
         model = AutoModelForCausalLM.from_pretrained(
             teacher_model_name,
@@ -363,7 +381,7 @@ class DataAugmenter:
             output_ids = model.generate(
                 input_ids,
                 attention_mask=attention_mask,
-                max_new_tokens=420,
+                max_new_tokens=self.teacher_max_new_tokens,
                 do_sample=False,
                 pad_token_id=tokenizer.pad_token_id,
             )
