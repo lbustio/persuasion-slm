@@ -220,19 +220,27 @@ persuasion-slm/
 
 ### Training (`configs/training_defaults.yaml`)
 
-Key settings:
-- **Learning rate**: `3.0e-5`
-- **Max epochs**: `6` with early stopping patience `2`
-- **Quality gate**: Minimum macro F1 of `0.65` at epoch 3
-- **Max length**: `256` (classifier), `4096` (SLM)
-- **Splits**: 70% train, 10% validation, 20% test, 10% heldout
+| Parameter | Default | What it does |
+|---|---|---|
+| **Learning rate** | `3.0e-5` | Step size for optimizer updates. Lower values train slower but more stably |
+| **Max epochs** | `6` | Maximum number of full passes through the training data |
+| **Early stopping patience** | `2` | Stops training if validation metric doesn't improve for 2 consecutive checks |
+| **Quality gate** | `0.65` F1 at epoch 3 | Hard stop if classifier macro F1 hasn't reached this by epoch 3. Prevents wasting time on non-viable runs |
+| **Classifier max length** | `256` | Token limit for input text sent to the encoder classifier |
+| **SLM max length** | `4096` | Token limit for SLM context window during fine-tuning and inference |
+| **Train split** | `70%` | Data used for model weight updates |
+| **Validation split** | `10%` | Data used for epoch-by-epoch performance monitoring and early stopping |
+| **Test split** | `20%` | Held-out data for final unbiased metric reporting |
+| **Heldout final split** | `10%` | Reserved for SLM evaluation benchmarks only. Never used during training |
 
 ### Webapp (`configs/webapp.yaml`)
 
-- **Visible threshold**: `0.25` (shown in UI)
-- **Positive threshold**: `0.40` (considered detected)
-- **Strong threshold**: `0.60` (high confidence)
-- **Languages**: Spanish, English, auto-detect
+| Parameter | Default | What it does |
+|---|---|---|
+| **Visible threshold** | `0.25` | Principles with scores below this are hidden from the UI entirely |
+| **Positive threshold** | `0.40` | Scores above this are marked as "Detected" (green indicator) |
+| **Strong threshold** | `0.60` | Scores above this are marked as "Strong signal" (bold/highlighted in UI) |
+| **Languages** | `es`, `en`, `auto` | Analysis language. `auto` uses langdetect to pick between Spanish and English |
 
 ---
 
