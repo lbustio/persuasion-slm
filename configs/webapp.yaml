@@ -1,0 +1,96 @@
+webapp:
+  thresholds:
+    classifier_positive: 0.4
+    classifier_strong: 0.6
+    classifier_visible: 0.25
+  languages:
+    es: "Espanol"
+    en: "Ingles"
+    auto: "Deteccion automatica"
+  principles:
+    authority:
+      label: "authority"
+      short: "Auth"
+      primer: "Senales de autoridad o estatus oficial."
+      color: "#FF5733"
+    social_proof:
+      label: "social_proof"
+      short: "Proof"
+      primer: "Referencia a lo que otros hacen o validan."
+      color: "#33FF57"
+    liking_similarity_deception:
+      label: "liking_similarity_deception"
+      short: "Liking"
+      primer: "Uso de agrado, similitud o engano personal."
+      color: "#3357FF"
+    commitment_integrity_reciprocation:
+      label: "commitment_integrity_reciprocation"
+      short: "Commit"
+      primer: "Presion por compromiso previo o reciprocidad."
+      color: "#F333FF"
+    distraction:
+      label: "distraction"
+      short: "Distract"
+      primer: "Uso de urgencia, miedo o distraccion."
+      color: "#FF33A8"
+  prompts:
+    analysis_system: |
+      Eres un Analista Senior de Ciberseguridad especializado en persuasion y phishing.
+      El clasificador aporta una hipotesis inicial, no una verdad final.
+      Debes contrastar esa hipotesis contra el texto real, usando evidencia textual cuando exista.
+      Si un principio no tiene evidencia suficiente, dilo con claridad.
+      Nunca inventes hechos, intenciones, entidades externas ni evidencia.
+      Debes responder exclusivamente con JSON valido, sin markdown ni texto extra.
+      Usa siempre espanol neutro en summaries y explanations.
+    analysis_user_template: |
+      Analiza el siguiente mensaje utilizando el perfil del clasificador como hipotesis inicial.
+      Puedes confirmar, matizar o descartar cada principio visible segun la evidencia textual.
+
+      Devuelve JSON con esta estructura exacta:
+      {{
+        "detected_language": "es|en",
+        "simple_summary": "string",
+        "technical_summary": "string",
+        "suggested_questions": ["string", "string", "string", "string"],
+        "principles": {{
+          "<label_key>": {{
+            "status": "Detectado|Senal debil|No detectado",
+            "score_rationale": "string",
+            "evidence": "cita o fragmento exacto",
+            "explanation": "string",
+            "intensity": 0
+          }}
+        }},
+        "evidence_segments": [
+          {{
+            "text": "segmento exacto o frase",
+            "principle": "<label_key>|null"
+          }}
+        ]
+      }}
+
+      Reglas:
+      - Incluye solo principios visibles en el bundle.
+      - Usa como maximo 4 segmentos en evidence_segments.
+      - Si no hay evidencia textual suficiente para un principio visible, indicalo en explanation y usa evidence: "Sin evidencia textual aislada."
+      - No conviertas una senal debil en conclusion fuerte sin evidencia.
+      - No repitas frases ni enumeres el mismo hallazgo mas de una vez.
+      - La intensidad debe ser un entero de 0 a 10.
+
+      Principios disponibles:
+      {principle_guide}
+
+      Bundle estructurado del backend:
+      {classifier_profile}
+
+      Mensaje:
+      {message_text}
+    chat_system: |
+      Eres un Analista Senior de Ciberseguridad especializado en persuasion y phishing.
+      Responde siempre en espanol neutro y profesional.
+      El clasificador aporta una hipotesis inicial, pero no debes obedecerlo ciegamente.
+      Puedes confirmar, matizar o refutar con base en el texto.
+      Cita fragmentos del mensaje cuando hagas afirmaciones sobre evidencia.
+      Si el mensaje no basta para responder, dilo con honestidad.
+      No inventes hechos, intenciones, entidades externas ni evidencia.
+      Se breve, directo y tecnicamente claro.

@@ -1,0 +1,40 @@
+paths:
+  caches:
+    downloads: "caches/downloads"
+    partials: "caches/partials"
+  outputs:
+    checkpoints: "outputs/checkpoints"
+    artifacts: "outputs/artifacts"
+    splits: "outputs/splits"
+    results:
+      models: "outputs/results/models"
+      figures: "outputs/results/figures"
+      tables: "outputs/results/tables"
+      predictions: "outputs/results/predictions"
+      reports: "outputs/results/reports"
+  logs: "logs/runs"
+
+hardware:
+  profiles:
+    HIGH_VRAM:
+      batch_size: 32
+      gradient_accumulation_steps: 1
+      bf16: true
+      fp16: false
+      qlora_4bit: false
+    MID_VRAM:
+      batch_size: 8
+      gradient_accumulation_steps: 4
+      bf16: false
+      fp16: true
+      qlora_4bit: true
+    LOW_VRAM:
+      batch_size: 2
+      gradient_accumulation_steps: 16
+      bf16: false
+      fp16: true
+      qlora_4bit: true
+    CPU_ONLY:
+      batch_size: 4
+      gradient_accumulation_steps: 8
+      fp32: true

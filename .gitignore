@@ -1,0 +1,98 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Virtual environments ---
+.venv/
+venv/
+ENV/
+.env*/
+conda-meta/
+
+# --- Local data, generated outputs, and downloaded assets ---
+caches/
+outputs/
+logs/
+__trash__/
+data/
+.cache/
+huggingface/
+hf_cache/
+model_cache/
+models/
+checkpoints/
+wandb/
+mlruns/
+runs/
+
+# --- ML model weights and generated runtime artifacts ---
+*.safetensors
+*.bin
+*.ckpt
+*.pt
+*.pth
+*.gguf
+*.onnx
+*.engine
+*.tflite
+*.pb
+*.h5
+*.joblib
+*.pkl
+*.npz
+*.npy
+adapter_model.*
+pytorch_model*
+tf_model*
+flax_model*
+model.onnx
+model.xml
+model.bin
+openvino_model*
+
+# --- Notebooks ---
+.ipynb_checkpoints
+
+# --- VS Code & IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Sistema ---
+.DS_Store
+Thumbs.db
+
+# --- Secrets ---
+.env
+.env.*
+secret_key.txt
+configs/secrets.yaml
+
+# --- Temporary files ---
+*.tmp
+*.temp
+*.bak
+*.log
+*.cache
+*.sqlite
+*.db

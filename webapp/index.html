@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Persuasion Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="minimal-shell">
+    <section class="minimal-hero">
+      <div class="hero-grid">
+        <img src="/static/logo.png" alt="Logo" class="project-logo">
+        <div class="hero-copy">
+          <h1>Persuasion Lab</h1>
+          <p class="hero-text" id="hero-subtext">
+            Entorno de investigacion: <span id="env-tag">Iniciando...</span> | <span id="privacy-tag">Local-Only</span>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="minimal-grid">
+      <section class="panel minimal-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Mensaje inspeccionado</p>
+            <h2>Texto fuente</h2>
+          </div>
+        </div>
+
+        <label class="field-label" for="message-input">Mensaje</label>
+        <textarea id="message-input" class="message-input compact" spellcheck="false" placeholder="Pega aqui el mensaje que quieres inspeccionar..."></textarea>
+        <div class="input-note" id="input-note">Pega el texto fuente y ejecuta el analisis local antes de conversar con el sistema.</div>
+
+
+
+        <div class="cta-row">
+          <button class="primary-btn" id="run-analysis">Analizar mensaje</button>
+          <button class="secondary-btn" id="reset-workspace">Limpiar</button>
+        </div>
+      </section>
+
+      <section class="panel minimal-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Chat</p>
+            <h2>Conversacion contextual</h2>
+          </div>
+          <span class="status-pill" id="risk-pill"></span>
+        </div>
+
+        <div class="chat-context" id="chat-context">Esperando mensaje y analisis.</div>
+        <div id="chat-thread" class="chat-thread"></div>
+
+        <div class="chat-box">
+          <textarea id="chat-input" class="chat-textarea" placeholder="Pregunta sobre el mensaje inspeccionado...&#10;&#10;Enter para enviar. Shift+Enter para salto de linea."></textarea>
+          <button class="primary-btn" id="send-chat">Enviar</button>
+        </div>
+
+
+      </section>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="panel-head">
+        <div>
+          <p class="panel-kicker">Actividad</p>
+          <h2>Log de ejecucion</h2>
+        </div>
+      </div>
+
+      <div class="log-stream" id="log-stream"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
