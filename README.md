@@ -108,21 +108,21 @@ pip install -r configs/requirements.txt
 
 ```bash
 # Full run with auto SLM selection
-# Detects your hardware, picks the optimal SLM, and runs every phase:
-# data harmonization, augmentation, classifier training, SLM fine-tuning, and model export
 python main.py --fresh-all --slm auto
+```
+Detects your hardware, picks the optimal SLM, and runs every phase: data harmonization, augmentation, classifier training, SLM fine-tuning, and model export.
 
+```bash
 # SLM-only (skip classifier training and export)
-# Runs only the phases needed to produce the SLM adapter:
-# harmonization, splits, augmentation, and SLM fine-tuning.
-# Useful when you already have a classifier or just want the LLM
 python main.py --slm-only --slm auto
+```
+Runs only the phases needed to produce the SLM adapter: harmonization, splits, augmentation, and SLM fine-tuning. Useful when you already have a classifier or just want the LLM.
 
+```bash
 # Specific model selection
-# Forces specific models instead of auto-detecting.
-# Uses Qwen2.5-1.5B as SLM and XLM-RoBERTa as the classifier
 python main.py --fresh-all --slm Qwen/Qwen2.5-1.5B-Instruct --classifier FacebookAI/xlm-roberta-base
 ```
+Forces specific models instead of auto-detecting. Uses Qwen2.5-1.5B as the SLM and XLM-RoBERTa as the classifier.
 
 #### CLI Arguments
 
