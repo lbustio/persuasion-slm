@@ -22,7 +22,7 @@ Designed for **local-only execution** to ensure data privacy and sovereignty.
 | `DIS` | Distraction | Urgency, fear, or distraction tactics |
 
 ### Pipeline Phases
-1. **Data Harmonization** — Unifies multiple datasets (IWSPA, Spaphish) into a consistent format
+1. **Data Harmonization** — Unifies phishing and persuasion datasets into a consistent format
 2. **Master Split Creation** — Stable message-level splits (train/val/test/heldout) with leakage prevention
 3. **Synthetic Augmentation** — Teacher LLM (Qwen 2.5 7B) generates explanations and reasoning for training data
 4. **Classifier Training** — Multi-label fine-tuning with early stopping and quality gates
