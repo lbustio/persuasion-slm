@@ -178,7 +178,6 @@ def main():
     preload_modules()
 
     hw_specs = detect_hardware_profile(logger)
-    logger.info("Global hardware profile: %s", hw_specs["profile"])
 
     from src.pipeline.augmenter import DataAugmenter
     from src.pipeline.classifier_trainer import ClassifierTrainer
@@ -195,14 +194,12 @@ def main():
     if selected_slm.lower() == "auto":
         advisor = ModelAdvisor(logger, cache_dir=layout.outputs_reports, model_cache_dir=layout.cache_downloads)
         selected_slm = advisor.discover_optimal_model(hw_specs)
-    logger.info("Using SLM model: %s", selected_slm)
 
     selected_teacher = args.teacher
     if selected_teacher.lower() == "auto":
         if advisor is None:
             advisor = ModelAdvisor(logger, cache_dir=layout.outputs_reports, model_cache_dir=layout.cache_downloads)
         selected_teacher = advisor.discover_teacher_model(hw_specs)
-    logger.info("Using Teacher model: %s", selected_teacher)
 
     try:
         fresh_harmonizer = args.fresh_all or args.fresh_harmonizer

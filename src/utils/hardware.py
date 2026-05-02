@@ -134,17 +134,21 @@ def detect_hardware_profile(logger: logging.Logger | None = None) -> dict:
     if logger:
         bf16_status = "Soportado" if specs["bf16_supported"] else "No soportado"
         ov_status = "Disponible" if specs["openvino_available"] else "No detectado"
-        mem_info = f"{specs['vram_gb']:.1f}GB VRAM" if specs['vram_gb'] > 0 else f"{specs['ram_gb']:.1f}GB RAM"
+        if specs["vram_gb"] > 0:
+            mem_info = f"{specs['vram_gb']:.1f} GB libre / {specs['vram_total_gb']:.1f} GB total VRAM"
+        else:
+            mem_info = f"{specs['ram_gb']:.1f} GB RAM"
         
-        logger.info("-" * 40)
-        logger.info(" AUDITORIA DE HARDWARE")
-        logger.info("-" * 40)
-        logger.info(f" DISPOSITIVO: {specs['name']}")
-        logger.info(f" BACKEND:     {specs['backend'].upper()} ({specs['device']})")
-        logger.info(f" MEMORIA:     {mem_info}")
-        logger.info(f" ESTRATEGIA:  {specs['profile']}")
-        logger.info(f" BF16:        {bf16_status}")
-        logger.info(f" OPENVINO:    {ov_status}")
-        logger.info("-" * 40)
+        logger.info("=" * 60)
+        logger.info(" HARDWARE PROFILE")
+        logger.info("=" * 60)
+        logger.info(" GPU:           %s", specs["name"])
+        logger.info(" Backend:       %s (%s)", specs["backend"].upper(), specs["device"])
+        logger.info(" Memoria:       %s", mem_info)
+        logger.info(" Perfil:        %s", specs["profile"])
+        logger.info(" BF16:          %s", bf16_status)
+        logger.info(" OpenVINO:      %s", ov_status)
+        logger.info(" Cores (log/phy): %d / %d", specs["logical_cores"], specs["physical_cores"])
+        logger.info("=" * 60)
 
     return specs

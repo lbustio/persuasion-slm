@@ -59,16 +59,80 @@ class ModelAdvisor:
         self._readme_cache: dict[str, str] = {}
 
     def discover_optimal_model(self, hw_specs: dict[str, Any], *, limit: int = 80) -> str:
+        vram_gb = float(hw_specs.get("vram_gb", 0.0))
+        max_params = self._max_params_for_hw(hw_specs)
+        self.logger.info("=" * 60)
+        self.logger.info(" SLM MODEL SELECTION")
+        self.logger.info("=" * 60)
+        self.logger.info(" Free VRAM:     %.1f GB", vram_gb)
+        self.logger.info(" Max SLM params: %.1f B (LoRA fine-tuning)", max_params)
+        self.logger.info(" Source:        Hugging Face API (limit=%d)", limit)
+        self.logger.info("-" * 60)
+
         report = self.rank_models(hw_specs, limit=limit)
         self._write_report(report)
+
+        if report["candidates"]:
+            self.logger.info(" Top candidates found:")
+            for i, c in enumerate(report["candidates"][:5], 1):
+                self.logger.info("  %d. %-45s %.1fB  score=%.2f", i, c["model_id"], c["params_b"], c["score"])
+
         if not report["winner"]:
+            self.logger.info(" No suitable model found for this hardware.")
+            self.logger.info("-" * 60)
             raise RuntimeError(
                 "No SLM candidate could be selected automatically. Internet search failed or no cached model fits the hardware. "
                 "Provide --slm explicitly or enable network access."
             )
-        winner = report["winner"]["model_id"]
-        self.logger.info("Selected SLM for hardware: %s", winner)
-        return winner
+
+        w = report["winner"]
+        self.logger.info(" Winner:        %s", w["model_id"])
+        self.logger.info(" Reason:        %s", w["reason"])
+        self.logger.info(" Params:        %.1f B", w["params_b"])
+        self.logger.info("=" * 60)
+        return w["model_id"]
+
+    def discover_teacher_model(self, hw_specs: dict[str, Any], *, limit: int = 80) -> str:
+        """Select the best instruction-following model for Teacher/augmentation.
+
+        Teacher models are used for *inference only*, so we can apply 4-bit
+        quantization and select models that are 2-3x larger than what we would
+        choose for LoRA fine-tuning. This maximises the quality of synthetic
+        audit data without any training-time memory overhead.
+
+        Capacity formula (4-bit, 0.5 GB per B param):
+            max_params = (free_vram_gb - 3_overhead) * 2
+        """
+        vram_gb = float(hw_specs.get("vram_gb", 0.0))
+        max_params = self._max_teacher_params_for_hw(hw_specs)
+        self.logger.info("=" * 60)
+        self.logger.info(" TEACHER MODEL SELECTION")
+        self.logger.info("=" * 60)
+        self.logger.info(" Free VRAM:       %.1f GB", vram_gb)
+        self.logger.info(" Max Teacher params: %.1f B (4-bit inference)", max_params)
+        self.logger.info(" Source:          Hugging Face API (limit=%d)", limit)
+        self.logger.info("-" * 60)
+
+        report = self.rank_teacher_models(hw_specs, limit=limit)
+        self._write_teacher_report(report)
+
+        if report["candidates"]:
+            self.logger.info(" Top candidates found:")
+            for i, c in enumerate(report["candidates"][:5], 1):
+                self.logger.info("  %d. %-45s %.1fB  score=%.2f", i, c["model_id"], c["params_b"], c["score"])
+
+        if not report["winner"]:
+            fallback = "Qwen/Qwen2.5-7B-Instruct"
+            self.logger.info(" No Teacher candidate found. Falling back to: %s", fallback)
+            self.logger.info("-" * 60)
+            return fallback
+
+        w = report["winner"]
+        self.logger.info(" Winner:          %s", w["model_id"])
+        self.logger.info(" Reason:          %s", w["reason"])
+        self.logger.info(" Params:          %.1f B", w["params_b"])
+        self.logger.info("=" * 60)
+        return w["model_id"]
 
     def discover_teacher_model(self, hw_specs: dict[str, Any], *, limit: int = 80) -> str:
         """Select the best instruction-following model for Teacher/augmentation.

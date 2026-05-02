@@ -87,6 +87,7 @@ Thumbs.db
 .env.*
 secret_key.txt
 configs/secrets.yaml
+secrets/
 
 # --- Temporary files ---
 *.tmp

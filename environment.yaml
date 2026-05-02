@@ -1,0 +1,40 @@
+name: persuasion-slm
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - pyyaml
+  - requests
+  - tqdm
+  - psutil
+  - pip:
+      - transformers
+      - datasets
+      - accelerate
+      - peft
+      - bitsandbytes
+      - sentencepiece
+      - protobuf
+      - safetensors
+      - fastapi
+      - uvicorn
+      - pydantic
+      - python-multipart
+      - onnx
+      - onnxruntime-gpu
+      - openvino
+      - matplotlib
+      - seaborn
+      - tensorboard
